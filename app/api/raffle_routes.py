@@ -114,7 +114,7 @@ def set_raffle_inactive(raffle_id):
     if success:
         return jsonify({'message': message}), 200
     else:
-        return jsonify({'error': message}), 404
+        return jsonify({'error': message}), 400
 
 @bp.route('/user/<int:user_id>/history', methods=['GET'])
 def get_user_raffle_history(user_id):
@@ -126,6 +126,14 @@ def get_user_raffle_history(user_id):
 @bp.route('/<int:raffle_id>/activate', methods=['POST'])
 def activate_raffle(raffle_id):
     success, message = RaffleService.activate_raffle(raffle_id)
+    if success:
+        return jsonify({'message': message}), 200
+    else:
+        return jsonify({'error': message}), 400
+
+@bp.route('/<int:raffle_id>/cancel', methods=['POST'])
+def cancel_raffle(raffle_id):
+    success, message = RaffleService.cancel_raffle(raffle_id)
     if success:
         return jsonify({'message': message}), 200
     else:

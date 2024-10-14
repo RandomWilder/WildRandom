@@ -3,11 +3,13 @@ from datetime import datetime
 from .ticket import Ticket
 
 class RaffleStatus:
+    DRAFT = 'draft'
     COMING_SOON = 'coming_soon'
     ACTIVE = 'active'
     SOLD_OUT = 'sold_out'
-    ENDED = 'ended'
     INACTIVE = 'inactive'
+    ENDED = 'ended'
+    CANCELLED = 'cancelled'
 
 class Raffle(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -21,7 +23,7 @@ class Raffle(db.Model):
     ticket_price = db.Column(db.Float, nullable=False)
     number_of_tickets = db.Column(db.Integer, nullable=False)
     max_tickets_per_user = db.Column(db.Integer, nullable=False)
-    status = db.Column(db.String(20), default=RaffleStatus.COMING_SOON)
+    status = db.Column(db.String(20), default=RaffleStatus.DRAFT)
     result = db.Column(db.Text)
     general_terms_link = db.Column(db.String(255), nullable=False)
 
@@ -41,7 +43,7 @@ class Raffle(db.Model):
 
     def update_status(self):
         now = datetime.utcnow()
-        if self.status == RaffleStatus.INACTIVE:
+        if self.status in [RaffleStatus.INACTIVE, RaffleStatus.ENDED, RaffleStatus.CANCELLED]:
             return
         elif now < self.start_time:
             self.status = RaffleStatus.COMING_SOON

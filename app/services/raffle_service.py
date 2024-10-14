@@ -9,6 +9,9 @@ class RaffleService:
     @staticmethod
     def create_raffle(name, description, prize_description, terms_and_conditions, start_time, end_time, ticket_price, number_of_tickets, max_tickets_per_user, general_terms_link):
         try:
+            if end_time <= start_time:
+                return None, "End time must be after start time"
+
             new_raffle = Raffle(
                 name=name,
                 description=description,
@@ -20,7 +23,7 @@ class RaffleService:
                 number_of_tickets=number_of_tickets,
                 max_tickets_per_user=max_tickets_per_user,
                 general_terms_link=general_terms_link,
-                status=RaffleStatus.COMING_SOON
+                status=RaffleStatus.DRAFT
             )
             db.session.add(new_raffle)
             db.session.commit()
@@ -85,6 +88,8 @@ class RaffleService:
             raffle = Raffle.query.get(raffle_id)
             if not raffle:
                 return False, "Raffle not found"
+            if raffle.status in [RaffleStatus.ENDED, RaffleStatus.CANCELLED]:
+                return False, f"Cannot set raffle to inactive. Current status: {raffle.status}"
             raffle.status = RaffleStatus.INACTIVE
             db.session.commit()
             return True, "Raffle set to inactive"
@@ -102,7 +107,7 @@ class RaffleService:
                 raffle_history.append({
                     'raffle_id': raffle.id,
                     'raffle_name': raffle.name,
-                    'ticket_id': ticket.ticket_id if hasattr(ticket, 'ticket_id') else None,
+                    'ticket_id': ticket.ticket_id,
                     'ticket_number': ticket.ticket_number,
                     'purchase_time': ticket.purchase_time.isoformat() if ticket.purchase_time else None,
                     'raffle_status': raffle.status,
@@ -120,9 +125,30 @@ class RaffleService:
                 return False, "Raffle not found"
             if raffle.status != RaffleStatus.INACTIVE:
                 return False, f"Cannot activate raffle. Current status: {raffle.status}"
-            raffle.status = RaffleStatus.ACTIVE
+            
+            now = datetime.utcnow()
+            if now < raffle.start_time:
+                raffle.status = RaffleStatus.COMING_SOON
+            else:
+                raffle.status = RaffleStatus.ACTIVE
+            
             db.session.commit()
-            return True, "Raffle activated"
+            return True, f"Raffle set to {raffle.status}"
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            return False, str(e)
+
+    @staticmethod
+    def cancel_raffle(raffle_id):
+        try:
+            raffle = Raffle.query.get(raffle_id)
+            if not raffle:
+                return False, "Raffle not found"
+            if raffle.status in [RaffleStatus.ENDED, RaffleStatus.CANCELLED]:
+                return False, f"Cannot cancel raffle. Current status: {raffle.status}"
+            raffle.status = RaffleStatus.CANCELLED
+            db.session.commit()
+            return True, "Raffle cancelled"
         except SQLAlchemyError as e:
             db.session.rollback()
             return False, str(e)
