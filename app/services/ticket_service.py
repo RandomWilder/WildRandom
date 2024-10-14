@@ -21,6 +21,10 @@ class TicketService:
             if len(available_tickets) < num_tickets:
                 return None, f"Not enough tickets available. Only {len(available_tickets)} left."
 
+            user_tickets = Ticket.query.filter_by(raffle_id=raffle_id, user_id=user_id).count()
+            if user_tickets + num_tickets > raffle.max_tickets_per_user:
+                return None, f"Cannot purchase more than {raffle.max_tickets_per_user} tickets per user."
+
             purchased_tickets = random.sample(available_tickets, num_tickets)
 
             for ticket in purchased_tickets:

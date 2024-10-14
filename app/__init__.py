@@ -1,18 +1,25 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
-from flask_migrate import Migrate
+from config import Config
+import logging
 
 db = SQLAlchemy()
-migrate = Migrate()
 
-def create_app():
+def create_app(config_class=Config):
     app = Flask(__name__)
-    app.config.from_object('config.Config')
+    app.config.from_object(config_class)
 
     db.init_app(app)
-    migrate.init_app(app, db)
 
-    from app.api import raffle_routes
-    app.register_blueprint(raffle_routes.bp)
+    from app.api.raffle_routes import bp as raffle_bp
+    app.register_blueprint(raffle_bp, url_prefix='/api/raffle')
+
+    # Configure logging
+    logging.basicConfig(level=logging.DEBUG)
+    app.logger.setLevel(logging.DEBUG)
+
+    @app.route('/')
+    def index():
+        return "Welcome to the Raffle API"
 
     return app
