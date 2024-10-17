@@ -1,3 +1,5 @@
+import json
+from flask import current_app
 from app.models.raffle import Raffle, RaffleStatus, PrizeDistributionType
 from app.models.ticket import Ticket
 from app import db
@@ -90,7 +92,6 @@ class RaffleService:
             if not raffle:
                 return None, "Raffle not found"
 
-            raffle.update_status()
             if raffle.status != RaffleStatus.ENDED:
                 return None, f"Cannot select winner. Raffle status is {raffle.status}"
 
@@ -102,29 +103,30 @@ class RaffleService:
                 return None, "No tickets were generated for this raffle"
 
             winners = []
+            draw_time = datetime.utcnow()
             for _ in range(raffle.number_of_draws):
                 if not all_tickets:
                     break
                 winning_ticket_number = generate_winning_ticket(len(all_tickets))
                 winning_ticket = all_tickets.pop(winning_ticket_number - 1)
                 
-                if winning_ticket.user_id is None:
-                    winners.append("No Winner")
+                if raffle.prize_distribution_type == PrizeDistributionType.SPLIT:
+                    prize_value = raffle.prize_value / raffle.number_of_draws
                 else:
-                    winners.append(winning_ticket)
+                    prize_value = raffle.prize_value
 
-            result = []
-            for winner in winners:
-                if winner == "No Winner":
-                    result.append("No Winner")
-                else:
-                    if raffle.prize_distribution_type == PrizeDistributionType.SPLIT:
-                        prize_per_winner = raffle.prize_value / len([w for w in winners if w != "No Winner"])
-                    else:
-                        prize_per_winner = raffle.prize_value
-                    result.append(f"Winner: User {winner.user_id}, Ticket {winner.ticket_id}, Prize: {prize_per_winner}")
+                winner_info = {
+                    "raffle_id": raffle.id,
+                    "ticket_number": winning_ticket.ticket_number,
+                    "prize_description": raffle.prize_description,
+                    "prize_value": prize_value,
+                    "outcome": "Winner" if winning_ticket.user_id else "No Winner",
+                    "user_id": winning_ticket.user_id if winning_ticket.user_id else "No Winner",
+                    "draw_time": draw_time.isoformat()
+                }
+                winners.append(winner_info)
 
-            raffle.result = "; ".join(result)
+            raffle.result = json.dumps(winners)
             db.session.commit()
             return winners, None
         except SQLAlchemyError as e:
@@ -158,14 +160,32 @@ class RaffleService:
             raffle_history = []
             for ticket in user_tickets:
                 raffle = ticket.raffle
+                win_status = "The draw hasn't taken place yet"
+                prize_value = "Pending number of winners" if raffle.prize_distribution_type == PrizeDistributionType.SPLIT else raffle.prize_value
+
+                if raffle.status == RaffleStatus.ENDED:
+                    if raffle.result:
+                        try:
+                            results = json.loads(raffle.result)
+                            winning_ticket = next((r for r in results if r['user_id'] == user_id), None)
+                            if winning_ticket:
+                                win_status = "You Win!"
+                                prize_value = winning_ticket['prize_value']
+                            else:
+                                win_status = "No win"
+                        except json.JSONDecodeError:
+                            # If raffle.result is not a valid JSON, treat it as if no draw has taken place
+                            win_status = "Error in draw results"
+                    else:
+                        win_status = "Draw completed, but no results available"
+
                 raffle_history.append({
-                    'raffle_id': raffle.id,
-                    'raffle_name': raffle.name,
-                    'ticket_id': ticket.ticket_id,
-                    'ticket_number': ticket.ticket_number,
                     'purchase_time': ticket.purchase_time.isoformat() if ticket.purchase_time else None,
-                    'raffle_status': raffle.status.value,
-                    'won': raffle.result and f"User {user_id}" in raffle.result
+                    'raffle_name': raffle.name,
+                    'prize_description': raffle.prize_description,
+                    'prize_value': prize_value,
+                    'ticket_number': ticket.ticket_number,
+                    'win': win_status
                 })
             return raffle_history, None
         except SQLAlchemyError as e:
@@ -240,7 +260,7 @@ class RaffleService:
                 return None, "Raffle not found"
             if not raffle.result:
                 return None, "No draw has been performed yet"
-            return raffle.result.split("; "), None
+            return json.loads(raffle.result), None
         except SQLAlchemyError as e:
             return None, str(e)
 
@@ -268,7 +288,7 @@ class RaffleService:
                     "unique_participants": unique_participants,
                     "total_sold_tickets": sold_tickets,
                     "total_income": round(total_income, 2),
-                    "draw_results": raffle.get_formatted_result() or "No draw has been performed yet."
+                    "draw_results": json.loads(raffle.result) if raffle.result else "No draw has been performed yet."
                 })
 
                 comprehensive_info.append(raffle_info)
@@ -276,3 +296,21 @@ class RaffleService:
             return comprehensive_info[0] if raffle_id else comprehensive_info, None
         except SQLAlchemyError as e:
             return None, str(e)
+        
+    @staticmethod
+    def end_raffle(raffle_id):
+        try:
+            raffle = Raffle.query.get(raffle_id)
+            if not raffle:
+                return False, "Raffle not found"
+            
+            if raffle.status not in [RaffleStatus.ACTIVE, RaffleStatus.SOLD_OUT, RaffleStatus.COMING_SOON]:
+                return False, f"Cannot end raffle. Current status: {raffle.status}"
+            
+            raffle.status = RaffleStatus.ENDED
+            raffle.end_time = datetime.utcnow()  # Update end time to now
+            db.session.commit()
+            return True, "Raffle ended successfully"
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            return False, str(e)

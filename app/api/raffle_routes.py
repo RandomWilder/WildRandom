@@ -97,18 +97,7 @@ def draw_winner(raffle_id):
     if error:
         return jsonify({'error': error}), 400
     
-    result = []
-    for winner in winners:
-        if winner == "No Winner":
-            result.append({"outcome": "No Winner"})
-        else:
-            result.append({
-                "outcome": "Winner",
-                "user_id": winner.user_id,
-                "ticket_id": winner.ticket_id
-            })
-    
-    return jsonify({'draw_results': result}), 200
+    return jsonify({'draw_results': winners}), 200
 
 @bp.route('/<int:raffle_id>/activate', methods=['POST'])
 def activate_raffle(raffle_id):
@@ -186,3 +175,11 @@ def get_purchased_tickets(raffle_id):
         'page': page,
         'per_page': per_page
     }), 200
+
+@bp.route('/<int:raffle_id>/end', methods=['POST'])
+def end_raffle(raffle_id):
+    success, message = RaffleService.end_raffle(raffle_id)
+    if success:
+        return jsonify({'message': message}), 200
+    else:
+        return jsonify({'error': message}), 400
